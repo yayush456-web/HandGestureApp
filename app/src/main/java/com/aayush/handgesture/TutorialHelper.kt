@@ -25,7 +25,7 @@ object TutorialHelper {
         ),
         Step(
             "3. Open the menu",
-            "Once active, make a FIST to open the quick menu. The status line will show " +
+            "Once active, give a THUMBS UP to open the quick menu. The status line will show " +
                 "you're in menu mode."
         ),
         Step(
@@ -41,7 +41,7 @@ object TutorialHelper {
         ),
         Step(
             "6. Go back / deactivate",
-            "Make a FIST at any time to return to the quick menu.\nShow your OPEN PALM at " +
+            "Give a THUMBS UP at any time to return to the quick menu.\nShow your OPEN PALM at " +
                 "any time to deactivate completely.\n\nTip: hold each gesture steady for about " +
                 "half a second - the app waits for a stable gesture before acting, so quick " +
                 "hand movements while repositioning won't trigger anything by accident."

@@ -69,7 +69,7 @@ class GestureStateMachine(
             }
             Mode.ACTIVE -> {
                 when (gesture) {
-                    GestureUtils.Gesture.FIST -> mode = Mode.MENU
+                    GestureUtils.Gesture.THUMBS_UP -> mode = Mode.MENU
                     GestureUtils.Gesture.OPEN_PALM -> mode = Mode.IDLE // toggle off
                     else -> {}
                 }
@@ -90,7 +90,7 @@ class GestureStateMachine(
             }
             Mode.ADJUST -> {
                 when (gesture) {
-                    GestureUtils.Gesture.FIST -> {
+                    GestureUtils.Gesture.THUMBS_UP -> {
                         mode = Mode.MENU
                         target = Target.NONE
                     }
@@ -134,7 +134,7 @@ class GestureStateMachine(
     private fun publishStatus() {
         val text = when (mode) {
             Mode.IDLE -> "○ idle - show palm to activate"
-            Mode.ACTIVE -> "● active - fist for menu"
+            Mode.ACTIVE -> "● active - thumbs up for menu"
             Mode.MENU -> "☰ menu - 1=brightness 2=volume"
             Mode.ADJUST -> {
                 val label = if (target == Target.BRIGHTNESS) "brightness" else "volume"
