@@ -22,7 +22,7 @@ class GestureStateMachine(
     // rotation tracking while pinching
     private var lastPinchAngle: Float? = null
     private var accumulatedAngle = 0f
-    private val degreesPerStep = 12f
+    private val degreesPerStep = 6f
 
     // frames with no hand detected -> auto reset to idle
     private var missingFrames = 0
