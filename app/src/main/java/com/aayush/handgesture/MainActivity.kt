@@ -25,6 +25,14 @@ class MainActivity : AppCompatActivity() {
 
         val tvStatus = findViewById<TextView>(R.id.tvStatus)
 
+        findViewById<Button>(R.id.btnHowToUse).setOnClickListener {
+            TutorialHelper.show(this)
+        }
+
+        if (TutorialHelper.shouldShowOnFirstLaunch(this)) {
+            TutorialHelper.show(this)
+        }
+
         findViewById<Button>(R.id.btnGrantOverlay).setOnClickListener {
             if (!Settings.canDrawOverlays(this)) {
                 val intent = Intent(

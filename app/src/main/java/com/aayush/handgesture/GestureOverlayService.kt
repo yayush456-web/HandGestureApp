@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
@@ -75,10 +76,19 @@ class GestureOverlayService : LifecycleService() {
     }
 
     private fun onLandmarksResult(landmarks: List<NormalizedLandmark>?) {
-        if (landmarks == null) {
-            stateMachine.onNoHand()
-        } else {
-            stateMachine.onLandmarks(landmarks)
+        // This callback fires on a MediaPipe worker thread, not the main thread.
+        // Everything downstream (state machine + overlay.update) is safe to call from
+        // here because OverlayManager.update() hops to the main thread internally,
+        // and the state machine itself does no UI work directly.
+        try {
+            if (landmarks == null) {
+                stateMachine.onNoHand()
+            } else {
+                stateMachine.onLandmarks(landmarks)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gesture processing error", e)
+            overlay.update("gesture error - see logs")
         }
     }
 
@@ -140,10 +150,16 @@ class GestureOverlayService : LifecycleService() {
                 }
             }
 
+            val preview = Preview.Builder().build()
+            val previewView = overlay.getPreviewView()
+            if (previewView != null) {
+                preview.setSurfaceProvider(previewView.surfaceProvider)
+            }
+
             val selector = CameraSelector.DEFAULT_FRONT_CAMERA
             try {
                 cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(this, selector, analysis)
+                cameraProvider?.bindToLifecycle(this, selector, preview, analysis)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
                 overlay.update("camera bind failed")
