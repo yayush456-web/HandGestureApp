@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="32dp"
+    android:background="@color/black">
+
+    <TextView
+        android:id="@+id/tvTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hand Gesture Control"
+        android:textColor="@color/white"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/tvStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Status: idle"
+        android:textColor="@color/accent"
+        android:textSize="14sp"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/white"
+        android:alpha="0.75"
+        android:layout_marginBottom="24dp"
+        android:text="Open palm = activate\nFist = quick menu\n1 finger = brightness, 2 fingers = volume\nPinch + rotate wrist = adjust value\nOpen palm again = deactivate" />
+
+    <Button
+        android:id="@+id/btnGrantOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="1. Allow display over other apps"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnGrantWriteSettings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="2. Allow modify system settings"
+        android:layout_marginBottom="8dp" />
+
+    <Button
+        android:id="@+id/btnGrantCamera"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="3. Allow camera"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/btnStart"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Start Gesture Control"
+        android:backgroundTint="@color/accent" />
+
+    <Button
+        android:id="@+id/btnStop"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Stop" />
+
+</LinearLayout>

@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.HandGesture" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/accent</item>
+        <item name="android:windowBackground">@color/black</item>
+    </style>
