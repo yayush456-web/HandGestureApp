@@ -3,14 +3,16 @@ package com.aayush.handgesture
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class GestureStateMachine(
-    private val onStateText: (String) -> Unit,
-    private val onAdjust: (target: Target, delta: Int) -> Unit
+    private val onStateText: (full: String, minimal: String) -> Unit,
+    private val onAdjust: (target: Target, delta: Int) -> Int, // returns the resulting level, 0-100
+    private val onQueryLevel: (target: Target) -> Int // returns current level, 0-100, without changing it
 ) {
     enum class Mode { IDLE, ACTIVE, MENU, ADJUST }
     enum class Target { NONE, BRIGHTNESS, VOLUME }
 
     private var mode = Mode.IDLE
     private var target = Target.NONE
+    private var currentLevelPct: Int? = null
 
     // debounce: require N consecutive frames of the same gesture before acting
     private var lastGesture: GestureUtils.Gesture? = null
@@ -79,24 +81,26 @@ class GestureStateMachine(
                     GestureUtils.Gesture.ONE_FINGER -> {
                         target = Target.BRIGHTNESS
                         mode = Mode.ADJUST
+                        currentLevelPct = onQueryLevel(target)
                     }
                     GestureUtils.Gesture.TWO_FINGER -> {
                         target = Target.VOLUME
                         mode = Mode.ADJUST
+                        currentLevelPct = onQueryLevel(target)
                     }
                     GestureUtils.Gesture.OPEN_PALM -> mode = Mode.IDLE
                     else -> {}
                 }
             }
             Mode.ADJUST -> {
+                // Only THUMBS_UP leaves ADJUST - OPEN_PALM is deliberately not handled here,
+                // since fingers spreading open mid-pinch (releasing the pinch) was being
+                // misread as an open palm and kicking the user out to IDLE unintentionally.
                 when (gesture) {
                     GestureUtils.Gesture.THUMBS_UP -> {
                         mode = Mode.MENU
                         target = Target.NONE
-                    }
-                    GestureUtils.Gesture.OPEN_PALM -> {
-                        mode = Mode.IDLE
-                        target = Target.NONE
+                        currentLevelPct = null
                     }
                     else -> {}
                 }
@@ -112,11 +116,11 @@ class GestureStateMachine(
             accumulatedAngle += delta
             while (accumulatedAngle >= degreesPerStep) {
                 accumulatedAngle -= degreesPerStep
-                onAdjust(target, +1) // clockwise = increase
+                currentLevelPct = onAdjust(target, +1) // clockwise = increase
             }
             while (accumulatedAngle <= -degreesPerStep) {
                 accumulatedAngle += degreesPerStep
-                onAdjust(target, -1) // counterclockwise = decrease
+                currentLevelPct = onAdjust(target, -1) // counterclockwise = decrease
             }
         }
         lastPinchAngle = angle
@@ -125,10 +129,19 @@ class GestureStateMachine(
     private fun reset() {
         mode = Mode.IDLE
         target = Target.NONE
+        currentLevelPct = null
         lastGesture = null
         sameGestureCount = 0
         lastPinchAngle = null
         publishStatus()
+    }
+
+    /** Short label with no instructions - used by the overlay when the app itself isn't in the foreground. */
+    private fun modeLabel(): String = when (mode) {
+        Mode.IDLE -> "Idle"
+        Mode.ACTIVE -> "Active"
+        Mode.MENU -> "Menu"
+        Mode.ADJUST -> if (target == Target.BRIGHTNESS) "Brightness" else "Volume"
     }
 
     private fun publishStatus() {
@@ -138,9 +151,11 @@ class GestureStateMachine(
             Mode.MENU -> "☰ menu - 1=brightness 2=volume"
             Mode.ADJUST -> {
                 val label = if (target == Target.BRIGHTNESS) "brightness" else "volume"
-                "◐ $label - pinch + rotate wrist"
+                val icon = if (target == Target.BRIGHTNESS) "☀" else "🔊"
+                val pctText = currentLevelPct?.let { " $it%" } ?: ""
+                "$icon $label$pctText - pinch + rotate, thumbs up to go back"
             }
         }
-        onStateText(text)
+        onStateText(text, modeLabel())
     }
 }

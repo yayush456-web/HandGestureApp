@@ -12,7 +12,10 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,21 +41,36 @@ class GestureOverlayService : LifecycleService() {
 
     private var lastStatusText = "○ idle"
 
+    // Reflects whether the app itself (any of its activities) is on screen right now.
+    // The overlay only shows the live camera thumbnail while this is true; otherwise it
+    // falls back to a minimal text-only mode indicator so the camera preview isn't left
+    // rendering off-screen for no reason.
+    private val appForegroundObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            overlay.setAppForeground(true)
+        }
+        override fun onStop(owner: LifecycleOwner) {
+            overlay.setAppForeground(false)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         overlay = OverlayManager(this)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
 
         stateMachine = GestureStateMachine(
-            onStateText = { text ->
-                lastStatusText = text
-                overlay.update(text)
+            onStateText = { full, minimal ->
+                lastStatusText = full
+                overlay.update(full, minimal)
             },
-            onAdjust = { targetEnum, delta -> applyAdjustment(targetEnum, delta) }
+            onAdjust = { targetEnum, delta -> applyAdjustment(targetEnum, delta) },
+            onQueryLevel = { targetEnum -> queryLevel(targetEnum) }
         )
 
         startForegroundNotification()
         overlay.show()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(appForegroundObserver)
 
         CoroutineScope(Dispatchers.IO).launch {
             if (!ModelManager.isModelReady(this@GestureOverlayService)) {
@@ -92,39 +110,57 @@ class GestureOverlayService : LifecycleService() {
         }
     }
 
-    private fun applyAdjustment(target: GestureStateMachine.Target, delta: Int) {
-        when (target) {
+    private fun applyAdjustment(target: GestureStateMachine.Target, delta: Int): Int {
+        return when (target) {
             GestureStateMachine.Target.BRIGHTNESS -> adjustBrightness(delta)
             GestureStateMachine.Target.VOLUME -> adjustVolume(delta)
-            GestureStateMachine.Target.NONE -> {}
+            GestureStateMachine.Target.NONE -> 0
         }
     }
 
-    private fun adjustBrightness(delta: Int) {
+    /** Current level for `target` as a 0-100 percentage, without changing anything. */
+    private fun queryLevel(target: GestureStateMachine.Target): Int {
+        return when (target) {
+            GestureStateMachine.Target.BRIGHTNESS -> currentBrightnessPct()
+            GestureStateMachine.Target.VOLUME -> currentVolumePct()
+            GestureStateMachine.Target.NONE -> 0
+        }
+    }
+
+    private fun currentBrightnessRaw(): Int = try {
+        Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    } catch (e: Exception) {
+        128
+    }
+
+    private fun currentBrightnessPct(): Int = (currentBrightnessRaw() * 100) / MAX_BRIGHTNESS
+
+    private fun currentVolumePct(): Int {
+        val max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        return if (max > 0) (current * 100) / max else 0
+    }
+
+    /** Adjusts brightness by one step and returns the resulting percentage, for the overlay to display live. */
+    private fun adjustBrightness(delta: Int): Int {
         if (!Settings.System.canWrite(this)) {
-            overlay.update("need 'modify system settings' permission")
-            return
+            overlay.update("need 'modify system settings' permission", "Permission needed")
+            return currentBrightnessPct()
         }
         val step = 13 // ~5% of 255 per rotation step
-        val current = try {
-            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
-        } catch (e: Exception) {
-            128
-        }
-        val next = (current + delta * step).coerceIn(1, MAX_BRIGHTNESS)
+        val next = (currentBrightnessRaw() + delta * step).coerceIn(1, MAX_BRIGHTNESS)
         Settings.System.putInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, next)
-        val pct = (next * 100) / MAX_BRIGHTNESS
-        overlay.update("☀ brightness $pct%")
+        return (next * 100) / MAX_BRIGHTNESS
     }
 
-    private fun adjustVolume(delta: Int) {
+    /** Adjusts volume by one step and returns the resulting percentage, for the overlay to display live. */
+    private fun adjustVolume(delta: Int): Int {
         val stream = AudioManager.STREAM_MUSIC
         val max = audioManager.getStreamMaxVolume(stream)
         val current = audioManager.getStreamVolume(stream)
         val next = (current + delta).coerceIn(0, max)
         audioManager.setStreamVolume(stream, next, 0)
-        val pct = (next * 100) / max
-        overlay.update("🔊 volume $pct%")
+        return if (max > 0) (next * 100) / max else 0
     }
 
     private fun startCamera() {
@@ -191,6 +227,7 @@ class GestureOverlayService : LifecycleService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        ProcessLifecycleOwner.get().lifecycle.removeObserver(appForegroundObserver)
         cameraProvider?.unbindAll()
         cameraExecutor?.shutdown()
         handLandmarkerHelper?.close()

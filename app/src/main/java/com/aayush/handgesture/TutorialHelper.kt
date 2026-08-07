@@ -37,14 +37,25 @@ object TutorialHelper {
             "5. Adjust the value",
             "Pinch your thumb and index finger together like you're holding a tiny knob, " +
                 "then rotate your wrist:\n\nClockwise = increase\nCounterclockwise = decrease\n\n" +
-                "Keep pinching while you rotate - release the pinch to stop adjusting."
+                "The status line shows the live percentage as you turn. Releasing the pinch just " +
+                "pauses adjusting - it won't back you out, so a hand that opens up mid-turn won't " +
+                "kick you out by accident. Only a THUMBS UP returns you to the menu."
         ),
         Step(
             "6. Go back / deactivate",
-            "Give a THUMBS UP at any time to return to the quick menu.\nShow your OPEN PALM at " +
-                "any time to deactivate completely.\n\nTip: hold each gesture steady for about " +
-                "half a second - the app waits for a stable gesture before acting, so quick " +
-                "hand movements while repositioning won't trigger anything by accident."
+            "Give a THUMBS UP at any time to return to the quick menu.\nShow your OPEN PALM " +
+                "while active or in the menu to deactivate completely.\n\nTip: hold each gesture " +
+                "steady for about half a second - the app waits for a stable gesture before " +
+                "acting, so quick hand movements while repositioning won't trigger anything by " +
+                "accident."
+        ),
+        Step(
+            "7. About the floating box",
+            "The camera thumbnail only shows while this app is open on screen, so you can see " +
+                "what the tracker sees while you practice. Once you switch to another app, the " +
+                "thumbnail disappears and the box shrinks to just a small mode label (Idle, " +
+                "Active, Menu, Brightness, or Volume) - gesture tracking keeps working in the " +
+                "background either way."
         )
     )
 
