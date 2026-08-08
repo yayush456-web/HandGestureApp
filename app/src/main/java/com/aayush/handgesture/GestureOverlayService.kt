@@ -5,9 +5,12 @@ import android.app.NotificationManager
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
+import android.widget.Toast
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -79,6 +82,16 @@ class GestureOverlayService : LifecycleService() {
             onCursorActive = { active ->
                 cursorInitialized = false
                 overlay.setCursorVisible(active)
+                if (active && !CursorAccessibilityService.isConnected()) {
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    mainHandler.post {
+                        Toast.makeText(
+                            this,
+                            "Cursor clicks need Accessibility enabled - button 4 on the main screen",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             },
             onCursorMove = { nx, ny -> updateCursorPosition(nx, ny) },
             onCursorClick = { CursorAccessibilityService.performClick(cursorScreenX, cursorScreenY) }

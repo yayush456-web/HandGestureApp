@@ -18,10 +18,20 @@ class GestureStateMachine(
     private var target = Target.NONE
     private var currentLevelPct: Int? = null
 
-    // debounce: require N consecutive frames of the same gesture before acting
+    // debounce: require N consecutive frames of the same gesture before acting.
+    // Used for gestures you deliberately HOLD for a moment (menu picks, thumbs up, open palm).
     private var lastGesture: GestureUtils.Gesture? = null
     private var sameGestureCount = 0
     private val debounceFrames = 5
+
+    // Click/toggle in CURSOR and MUSIC modes are fast pinch-and-release snaps, not held
+    // poses - they almost never survive `debounceFrames` consecutive identical frames, which
+    // was why clicking only worked a fraction of the time. Instead this fires the instant a
+    // pinch starts (rising edge), needing only a couple of frames to filter out single-frame
+    // noise, and won't refire again until the pinch is released and re-closed.
+    private var pinchStreak = 0
+    private var pinchClickArmed = true
+    private val pinchClickConfirmFrames = 2
 
     // rotation tracking while pinching
     private var lastPinchAngle: Float? = null
@@ -43,12 +53,33 @@ class GestureStateMachine(
     fun onLandmarks(lm: List<NormalizedLandmark>) {
         missingFrames = 0
         val gesture = GestureUtils.classify(lm)
+        val pinchingNow = GestureUtils.isPinching(lm)
 
         // Cursor mode needs the index fingertip position every single frame, not just on a
         // stable/debounced gesture change - the whole point is that it tracks continuously.
         if (mode == Mode.CURSOR) {
             val tip = lm[8]
             onCursorMove(tip.x(), tip.y())
+        }
+
+        // Fast-path click/toggle detection - see field comments above for why this bypasses
+        // the general debounce below. Runs every frame regardless of mode so pinchStreak/
+        // pinchClickArmed always reflect reality; only MUSIC/CURSOR actually act on it.
+        if (pinchingNow) {
+            pinchStreak++
+        } else {
+            pinchStreak = 0
+            pinchClickArmed = true
+        }
+        if ((mode == Mode.MUSIC || mode == Mode.CURSOR) &&
+            pinchClickArmed && pinchStreak >= pinchClickConfirmFrames
+        ) {
+            pinchClickArmed = false
+            when (mode) {
+                Mode.MUSIC -> onMusicToggle()
+                Mode.CURSOR -> onCursorClick()
+                else -> {}
+            }
         }
 
         // debounce logic - PINCH is time-sensitive so it bypasses debounce once in ADJUST mode
@@ -123,14 +154,12 @@ class GestureStateMachine(
             }
             Mode.MUSIC -> {
                 when (gesture) {
-                    GestureUtils.Gesture.PINCH -> onMusicToggle()
                     GestureUtils.Gesture.THUMBS_UP -> mode = Mode.MENU
                     else -> {}
                 }
             }
             Mode.CURSOR -> {
                 when (gesture) {
-                    GestureUtils.Gesture.PINCH -> onCursorClick()
                     GestureUtils.Gesture.THUMBS_UP -> {
                         mode = Mode.MENU
                         onCursorActive(false)
@@ -167,6 +196,8 @@ class GestureStateMachine(
         lastGesture = null
         sameGestureCount = 0
         lastPinchAngle = null
+        pinchStreak = 0
+        pinchClickArmed = true
         publishStatus()
     }
 
