@@ -19,6 +19,15 @@ class MainActivity : AppCompatActivity() {
     private val cameraPermCode = 100
     private val notifPermCode = 101
 
+    /** True if the user has flipped this app's toggle on in Settings > Accessibility. */
+    private fun isCursorAccessibilityEnabled(): Boolean {
+        val enabledServices = Settings.Secure.getString(
+            contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        val expected = "$packageName/${CursorAccessibilityService::class.java.name}"
+        return enabledServices.split(":").any { it.equals(expected, ignoreCase = true) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -73,6 +82,19 @@ class MainActivity : AppCompatActivity() {
                         this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), notifPermCode
                     )
                 }
+            }
+        }
+
+        findViewById<Button>(R.id.btnGrantAccessibility).setOnClickListener {
+            if (isCursorAccessibilityEnabled()) {
+                Toast.makeText(this, "Already enabled", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(
+                    this,
+                    "Find 'Hand Gesture Control' in the list and turn it on",
+                    Toast.LENGTH_LONG
+                ).show()
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             }
         }
 

@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -41,6 +42,14 @@ class GestureOverlayService : LifecycleService() {
 
     private var lastStatusText = "○ idle"
 
+    // Raw (unsmoothed source) + smoothed on-screen cursor position, updated every frame while
+    // in Cursor mode. Only ever touched from the MediaPipe result thread (same thread that
+    // delivers onCursorMove/onCursorClick), so plain fields are fine - same assumption the
+    // rest of the gesture pipeline already relies on.
+    private var cursorScreenX = 0f
+    private var cursorScreenY = 0f
+    private var cursorInitialized = false
+
     // Reflects whether the app itself (any of its activities) is on screen right now.
     // The overlay only shows the live camera thumbnail while this is true; otherwise it
     // falls back to a minimal text-only mode indicator so the camera preview isn't left
@@ -65,7 +74,14 @@ class GestureOverlayService : LifecycleService() {
                 overlay.update(full, minimal)
             },
             onAdjust = { targetEnum, delta -> applyAdjustment(targetEnum, delta) },
-            onQueryLevel = { targetEnum -> queryLevel(targetEnum) }
+            onQueryLevel = { targetEnum -> queryLevel(targetEnum) },
+            onMusicToggle = { toggleMusicPlayback() },
+            onCursorActive = { active ->
+                cursorInitialized = false
+                overlay.setCursorVisible(active)
+            },
+            onCursorMove = { nx, ny -> updateCursorPosition(nx, ny) },
+            onCursorClick = { CursorAccessibilityService.performClick(cursorScreenX, cursorScreenY) }
         )
 
         startForegroundNotification()
@@ -161,6 +177,45 @@ class GestureOverlayService : LifecycleService() {
         val next = (current + delta).coerceIn(0, max)
         audioManager.setStreamVolume(stream, next, 0)
         return if (max > 0) (next * 100) / max else 0
+    }
+
+    /**
+     * Sends a media play/pause key event - the same mechanism a Bluetooth headset button uses.
+     * The system routes it to whichever app currently holds media focus (Spotify, YouTube
+     * Music, etc.), so this doesn't need to know or care what's actually playing.
+     */
+    private fun toggleMusicPlayback() {
+        val eventTime = System.currentTimeMillis()
+        audioManager.dispatchMediaKeyEvent(
+            KeyEvent(eventTime, eventTime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+        )
+        audioManager.dispatchMediaKeyEvent(
+            KeyEvent(eventTime, eventTime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 0)
+        )
+    }
+
+    /**
+     * Maps the index fingertip's normalized position (0-1, from the front camera's raw,
+     * unmirrored frame) to absolute screen pixel coordinates, smooths it to cut down on
+     * camera jitter, and moves the cursor dot there.
+     *
+     * X is flipped (1 - nx) because the front camera's raw coordinate frame is mirrored
+     * relative to how you're moving your hand - without the flip, moving your hand right
+     * would send the cursor left. If it ever feels backwards on a given device, flip this.
+     */
+    private fun updateCursorPosition(nx: Float, ny: Float) {
+        val dm = resources.displayMetrics
+        val rawX = (1f - nx) * dm.widthPixels
+        val rawY = ny * dm.heightPixels
+        if (!cursorInitialized) {
+            cursorScreenX = rawX
+            cursorScreenY = rawY
+            cursorInitialized = true
+        } else {
+            cursorScreenX += (rawX - cursorScreenX) * 0.4f
+            cursorScreenY += (rawY - cursorScreenY) * 0.4f
+        }
+        overlay.updateCursorPosition(cursorScreenX, cursorScreenY)
     }
 
     private fun startCamera() {

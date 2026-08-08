@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Hand Gesture Control</string>
+    <string name="accessibility_service_description">Lets the pinky-cursor gesture tap the screen where your index finger is pointing. Only used while Cursor mode is active - it does not read anything on your screen.</string>
 </resources>

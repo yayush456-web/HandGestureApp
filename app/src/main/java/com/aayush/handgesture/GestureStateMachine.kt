@@ -5,9 +5,13 @@ import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 class GestureStateMachine(
     private val onStateText: (full: String, minimal: String) -> Unit,
     private val onAdjust: (target: Target, delta: Int) -> Int, // returns the resulting level, 0-100
-    private val onQueryLevel: (target: Target) -> Int // returns current level, 0-100, without changing it
+    private val onQueryLevel: (target: Target) -> Int, // returns current level, 0-100, without changing it
+    private val onMusicToggle: () -> Unit,
+    private val onCursorActive: (Boolean) -> Unit, // fires once whenever CURSOR mode is entered/left
+    private val onCursorMove: (x: Float, y: Float) -> Unit, // normalized (0-1) index fingertip position, every frame
+    private val onCursorClick: () -> Unit
 ) {
-    enum class Mode { IDLE, ACTIVE, MENU, ADJUST }
+    enum class Mode { IDLE, ACTIVE, MENU, ADJUST, MUSIC, CURSOR }
     enum class Target { NONE, BRIGHTNESS, VOLUME }
 
     private var mode = Mode.IDLE
@@ -39,6 +43,13 @@ class GestureStateMachine(
     fun onLandmarks(lm: List<NormalizedLandmark>) {
         missingFrames = 0
         val gesture = GestureUtils.classify(lm)
+
+        // Cursor mode needs the index fingertip position every single frame, not just on a
+        // stable/debounced gesture change - the whole point is that it tracks continuously.
+        if (mode == Mode.CURSOR) {
+            val tip = lm[8]
+            onCursorMove(tip.x(), tip.y())
+        }
 
         // debounce logic - PINCH is time-sensitive so it bypasses debounce once in ADJUST mode
         if (mode == Mode.ADJUST && gesture == GestureUtils.Gesture.PINCH) {
@@ -88,6 +99,11 @@ class GestureStateMachine(
                         mode = Mode.ADJUST
                         currentLevelPct = onQueryLevel(target)
                     }
+                    GestureUtils.Gesture.THREE_FINGER -> mode = Mode.MUSIC
+                    GestureUtils.Gesture.PINKY_ONLY -> {
+                        mode = Mode.CURSOR
+                        onCursorActive(true)
+                    }
                     GestureUtils.Gesture.OPEN_PALM -> mode = Mode.IDLE
                     else -> {}
                 }
@@ -101,6 +117,23 @@ class GestureStateMachine(
                         mode = Mode.MENU
                         target = Target.NONE
                         currentLevelPct = null
+                    }
+                    else -> {}
+                }
+            }
+            Mode.MUSIC -> {
+                when (gesture) {
+                    GestureUtils.Gesture.PINCH -> onMusicToggle()
+                    GestureUtils.Gesture.THUMBS_UP -> mode = Mode.MENU
+                    else -> {}
+                }
+            }
+            Mode.CURSOR -> {
+                when (gesture) {
+                    GestureUtils.Gesture.PINCH -> onCursorClick()
+                    GestureUtils.Gesture.THUMBS_UP -> {
+                        mode = Mode.MENU
+                        onCursorActive(false)
                     }
                     else -> {}
                 }
@@ -127,6 +160,7 @@ class GestureStateMachine(
     }
 
     private fun reset() {
+        if (mode == Mode.CURSOR) onCursorActive(false)
         mode = Mode.IDLE
         target = Target.NONE
         currentLevelPct = null
@@ -136,25 +170,33 @@ class GestureStateMachine(
         publishStatus()
     }
 
-    /** Short label with no instructions - used by the overlay when the app itself isn't in the foreground. */
+    /** Short label used by the overlay when the app itself isn't in the foreground - still shows
+     *  the live level for brightness/volume, just without the full instructions. */
     private fun modeLabel(): String = when (mode) {
         Mode.IDLE -> "Idle"
         Mode.ACTIVE -> "Active"
         Mode.MENU -> "Menu"
-        Mode.ADJUST -> if (target == Target.BRIGHTNESS) "Brightness" else "Volume"
+        Mode.ADJUST -> {
+            val label = if (target == Target.BRIGHTNESS) "Brightness" else "Volume"
+            currentLevelPct?.let { "$label $it%" } ?: label
+        }
+        Mode.MUSIC -> "Music"
+        Mode.CURSOR -> "Cursor"
     }
 
     private fun publishStatus() {
         val text = when (mode) {
             Mode.IDLE -> "○ idle - show palm to activate"
             Mode.ACTIVE -> "● active - thumbs up for menu"
-            Mode.MENU -> "☰ menu - 1=brightness 2=volume"
+            Mode.MENU -> "☰ menu - 1=brightness 2=volume 3=music pinky=cursor"
             Mode.ADJUST -> {
                 val label = if (target == Target.BRIGHTNESS) "brightness" else "volume"
                 val icon = if (target == Target.BRIGHTNESS) "☀" else "🔊"
                 val pctText = currentLevelPct?.let { " $it%" } ?: ""
                 "$icon $label$pctText - pinch + rotate, thumbs up to go back"
             }
+            Mode.MUSIC -> "🎵 music - pinch to play/pause, thumbs up to go back"
+            Mode.CURSOR -> "🖱 cursor - move index finger, pinch to click, thumbs up to go back"
         }
         onStateText(text, modeLabel())
     }
