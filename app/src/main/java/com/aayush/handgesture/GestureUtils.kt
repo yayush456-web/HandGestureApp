@@ -80,11 +80,11 @@ object GestureUtils {
         }
     }
 
-    /** Thumb tip close to index tip = pinch (used to grab the "knob"). */
+    /** Thumb tip close to index tip = pinch (used to grab the "knob", click, toggle, select). */
     fun isPinching(lm: List<NormalizedLandmark>): Boolean {
         val scale = handScale(lm)
         val pinchDist = dist(lm[4], lm[8])
-        return pinchDist < scale * 0.55f
+        return pinchDist < scale * 0.7f
     }
 
     /** Angle (degrees) of the pinch point relative to the wrist, for rotation tracking. */

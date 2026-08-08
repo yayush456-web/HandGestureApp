@@ -29,16 +29,18 @@ class GestureStateMachine(
     private var sameGestureCount = 0
     private val debounceFrames = 5
 
-    // Fast edge-triggers for snap actions (pinch-to-select/toggle, two-finger-to-cycle) - these
-    // fire the instant the shape is confirmed for a couple of frames, rather than requiring
-    // `debounceFrames` consecutive frames like a held pose. A real snap gesture almost never
-    // survives 5 straight identical frames without a hint of landmark jitter breaking the
-    // streak, which was why pinch-to-click/toggle only worked a fraction of the time before.
+    // Fast edge-triggers for snap actions (pinch-to-select/toggle, two-finger-to-cycle).
+    // Pinch fires the instant it's detected on a single frame - same as Brightness/Volume's
+    // rotation, which reacts to the pinch every frame with no wait. It used to require 2
+    // consecutive pinching frames before firing, but a quick tap-pinch often released before
+    // that streak completed, which was why pinch-to-click/toggle only worked a fraction of
+    // the time. Two-finger-to-cycle keeps a small streak since it's a held pose, not a tap.
     private var pinchStreak = 0
     private var pinchArmed = true
     private var twoFingerStreak = 0
     private var twoFingerArmed = true
-    private val snapConfirmFrames = 2
+    private val pinchConfirmFrames = 1
+    private val twoFingerConfirmFrames = 2
 
     // rotation tracking while pinching (Brightness/Volume)
     private var lastPinchAngle: Float? = null
@@ -74,17 +76,17 @@ class GestureStateMachine(
         // Fast-path snap detection - see field comments above. Runs every frame regardless of
         // mode so the streak/armed state always reflects reality; only the relevant mode acts on it.
         if (pinchingNow) pinchStreak++ else { pinchStreak = 0; pinchArmed = true }
-        if (mode == Mode.MUSIC && pinchArmed && pinchStreak >= snapConfirmFrames) {
+        if (mode == Mode.MUSIC && pinchArmed && pinchStreak >= pinchConfirmFrames) {
             pinchArmed = false
             onMusicToggle()
-        } else if (mode == Mode.QUICK_ACTIONS && pinchArmed && pinchStreak >= snapConfirmFrames) {
+        } else if (mode == Mode.QUICK_ACTIONS && pinchArmed && pinchStreak >= pinchConfirmFrames) {
             pinchArmed = false
             onQuickActionsSelect(quickActionIndex)
         }
 
         val twoFingerNow = gesture == GestureUtils.Gesture.TWO_FINGER
         if (twoFingerNow) twoFingerStreak++ else { twoFingerStreak = 0; twoFingerArmed = true }
-        if (mode == Mode.QUICK_ACTIONS && twoFingerArmed && twoFingerStreak >= snapConfirmFrames) {
+        if (mode == Mode.QUICK_ACTIONS && twoFingerArmed && twoFingerStreak >= twoFingerConfirmFrames) {
             twoFingerArmed = false
             quickActionIndex = if (quickActionsCount > 0) (quickActionIndex + 1) % quickActionsCount else 0
             onQuickActionsHighlight(quickActionIndex)
