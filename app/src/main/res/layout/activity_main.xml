@@ -33,7 +33,7 @@
         android:textColor="@color/white"
         android:alpha="0.75"
         android:layout_marginBottom="24dp"
-        android:text="Open palm = activate\nThumbs up = quick menu\n1/2/3 fingers = brightness/volume/music, pinky = cursor\nPinch + rotate wrist = adjust value, pinch = click/play-pause\nThumbs up = back to menu, open palm = deactivate" />
+        android:text="Open palm = activate\nThumbs up = quick menu\n1/2/3 fingers = brightness/volume/music\npinky = cursor, rock (index+pinky) = quick actions\nPinch: rotate=adjust, click, or pinch+move=drag\n2 fingers=next in Quick Actions, thumbs up=back" />
 
     <Button
         android:id="@+id/btnGrantOverlay"
@@ -60,7 +60,7 @@
         android:id="@+id/btnGrantAccessibility"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="4. Enable cursor control (optional, for pinky gesture)"
+        android:text="4. Enable cursor control (optional, for cursor + quick actions)"
         android:layout_marginBottom="16dp" />
 
     <Button

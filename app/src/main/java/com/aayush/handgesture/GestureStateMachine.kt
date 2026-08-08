@@ -3,20 +3,25 @@ package com.aayush.handgesture
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class GestureStateMachine(
+    private val quickActionsCount: Int,
     private val onStateText: (full: String, minimal: String) -> Unit,
     private val onAdjust: (target: Target, delta: Int) -> Int, // returns the resulting level, 0-100
     private val onQueryLevel: (target: Target) -> Int, // returns current level, 0-100, without changing it
     private val onMusicToggle: () -> Unit,
     private val onCursorActive: (Boolean) -> Unit, // fires once whenever CURSOR mode is entered/left
     private val onCursorMove: (x: Float, y: Float) -> Unit, // normalized (0-1) index fingertip position, every frame
-    private val onCursorClick: () -> Unit
+    private val onCursorPinchState: (pinching: Boolean) -> Unit, // raw pinch state every frame in CURSOR - caller decides click vs drag
+    private val onQuickActionsActive: (Boolean) -> Unit,
+    private val onQuickActionsHighlight: (index: Int) -> Unit,
+    private val onQuickActionsSelect: (index: Int) -> Unit
 ) {
-    enum class Mode { IDLE, ACTIVE, MENU, ADJUST, MUSIC, CURSOR }
+    enum class Mode { IDLE, ACTIVE, MENU, ADJUST, MUSIC, CURSOR, QUICK_ACTIONS }
     enum class Target { NONE, BRIGHTNESS, VOLUME }
 
     private var mode = Mode.IDLE
     private var target = Target.NONE
     private var currentLevelPct: Int? = null
+    private var quickActionIndex = 0
 
     // debounce: require N consecutive frames of the same gesture before acting.
     // Used for gestures you deliberately HOLD for a moment (menu picks, thumbs up, open palm).
@@ -24,16 +29,18 @@ class GestureStateMachine(
     private var sameGestureCount = 0
     private val debounceFrames = 5
 
-    // Click/toggle in CURSOR and MUSIC modes are fast pinch-and-release snaps, not held
-    // poses - they almost never survive `debounceFrames` consecutive identical frames, which
-    // was why clicking only worked a fraction of the time. Instead this fires the instant a
-    // pinch starts (rising edge), needing only a couple of frames to filter out single-frame
-    // noise, and won't refire again until the pinch is released and re-closed.
+    // Fast edge-triggers for snap actions (pinch-to-select/toggle, two-finger-to-cycle) - these
+    // fire the instant the shape is confirmed for a couple of frames, rather than requiring
+    // `debounceFrames` consecutive frames like a held pose. A real snap gesture almost never
+    // survives 5 straight identical frames without a hint of landmark jitter breaking the
+    // streak, which was why pinch-to-click/toggle only worked a fraction of the time before.
     private var pinchStreak = 0
-    private var pinchClickArmed = true
-    private val pinchClickConfirmFrames = 2
+    private var pinchArmed = true
+    private var twoFingerStreak = 0
+    private var twoFingerArmed = true
+    private val snapConfirmFrames = 2
 
-    // rotation tracking while pinching
+    // rotation tracking while pinching (Brightness/Volume)
     private var lastPinchAngle: Float? = null
     private var accumulatedAngle = 0f
     private val degreesPerStep = 6f
@@ -55,31 +62,32 @@ class GestureStateMachine(
         val gesture = GestureUtils.classify(lm)
         val pinchingNow = GestureUtils.isPinching(lm)
 
-        // Cursor mode needs the index fingertip position every single frame, not just on a
-        // stable/debounced gesture change - the whole point is that it tracks continuously.
+        // Cursor mode needs the index fingertip position and raw pinch state every single
+        // frame, not just on a stable/debounced gesture change - movement and click-vs-drag
+        // are both continuous, not discrete pose changes.
         if (mode == Mode.CURSOR) {
             val tip = lm[8]
             onCursorMove(tip.x(), tip.y())
+            onCursorPinchState(pinchingNow)
         }
 
-        // Fast-path click/toggle detection - see field comments above for why this bypasses
-        // the general debounce below. Runs every frame regardless of mode so pinchStreak/
-        // pinchClickArmed always reflect reality; only MUSIC/CURSOR actually act on it.
-        if (pinchingNow) {
-            pinchStreak++
-        } else {
-            pinchStreak = 0
-            pinchClickArmed = true
+        // Fast-path snap detection - see field comments above. Runs every frame regardless of
+        // mode so the streak/armed state always reflects reality; only the relevant mode acts on it.
+        if (pinchingNow) pinchStreak++ else { pinchStreak = 0; pinchArmed = true }
+        if (mode == Mode.MUSIC && pinchArmed && pinchStreak >= snapConfirmFrames) {
+            pinchArmed = false
+            onMusicToggle()
+        } else if (mode == Mode.QUICK_ACTIONS && pinchArmed && pinchStreak >= snapConfirmFrames) {
+            pinchArmed = false
+            onQuickActionsSelect(quickActionIndex)
         }
-        if ((mode == Mode.MUSIC || mode == Mode.CURSOR) &&
-            pinchClickArmed && pinchStreak >= pinchClickConfirmFrames
-        ) {
-            pinchClickArmed = false
-            when (mode) {
-                Mode.MUSIC -> onMusicToggle()
-                Mode.CURSOR -> onCursorClick()
-                else -> {}
-            }
+
+        val twoFingerNow = gesture == GestureUtils.Gesture.TWO_FINGER
+        if (twoFingerNow) twoFingerStreak++ else { twoFingerStreak = 0; twoFingerArmed = true }
+        if (mode == Mode.QUICK_ACTIONS && twoFingerArmed && twoFingerStreak >= snapConfirmFrames) {
+            twoFingerArmed = false
+            quickActionIndex = if (quickActionsCount > 0) (quickActionIndex + 1) % quickActionsCount else 0
+            onQuickActionsHighlight(quickActionIndex)
         }
 
         // debounce logic - PINCH is time-sensitive so it bypasses debounce once in ADJUST mode
@@ -135,6 +143,12 @@ class GestureStateMachine(
                         mode = Mode.CURSOR
                         onCursorActive(true)
                     }
+                    GestureUtils.Gesture.ROCK -> {
+                        mode = Mode.QUICK_ACTIONS
+                        quickActionIndex = 0
+                        onQuickActionsActive(true)
+                        onQuickActionsHighlight(0)
+                    }
                     GestureUtils.Gesture.OPEN_PALM -> mode = Mode.IDLE
                     else -> {}
                 }
@@ -167,6 +181,15 @@ class GestureStateMachine(
                     else -> {}
                 }
             }
+            Mode.QUICK_ACTIONS -> {
+                when (gesture) {
+                    GestureUtils.Gesture.THUMBS_UP -> {
+                        mode = Mode.MENU
+                        onQuickActionsActive(false)
+                    }
+                    else -> {}
+                }
+            }
         }
     }
 
@@ -190,6 +213,7 @@ class GestureStateMachine(
 
     private fun reset() {
         if (mode == Mode.CURSOR) onCursorActive(false)
+        if (mode == Mode.QUICK_ACTIONS) onQuickActionsActive(false)
         mode = Mode.IDLE
         target = Target.NONE
         currentLevelPct = null
@@ -197,7 +221,9 @@ class GestureStateMachine(
         sameGestureCount = 0
         lastPinchAngle = null
         pinchStreak = 0
-        pinchClickArmed = true
+        pinchArmed = true
+        twoFingerStreak = 0
+        twoFingerArmed = true
         publishStatus()
     }
 
@@ -213,13 +239,14 @@ class GestureStateMachine(
         }
         Mode.MUSIC -> "Music"
         Mode.CURSOR -> "Cursor"
+        Mode.QUICK_ACTIONS -> "Quick Actions"
     }
 
     private fun publishStatus() {
         val text = when (mode) {
             Mode.IDLE -> "○ idle - show palm to activate"
             Mode.ACTIVE -> "● active - thumbs up for menu"
-            Mode.MENU -> "☰ menu - 1=brightness 2=volume 3=music pinky=cursor"
+            Mode.MENU -> "☰ menu - 1/2/3=brightness/volume/music, pinky=cursor, rock=actions"
             Mode.ADJUST -> {
                 val label = if (target == Target.BRIGHTNESS) "brightness" else "volume"
                 val icon = if (target == Target.BRIGHTNESS) "☀" else "🔊"
@@ -227,7 +254,8 @@ class GestureStateMachine(
                 "$icon $label$pctText - pinch + rotate, thumbs up to go back"
             }
             Mode.MUSIC -> "🎵 music - pinch to play/pause, thumbs up to go back"
-            Mode.CURSOR -> "🖱 cursor - move index finger, pinch to click, thumbs up to go back"
+            Mode.CURSOR -> "🖱 cursor - move index, pinch=click, pinch+move=drag, thumbs up=back"
+            Mode.QUICK_ACTIONS -> "⚡ actions - 2 fingers=next, pinch=select, thumbs up=back"
         }
         onStateText(text, modeLabel())
     }

@@ -2,6 +2,7 @@ package com.aayush.handgesture
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -13,14 +14,13 @@ import android.widget.TextView
 import androidx.camera.view.PreviewView
 
 /**
- * A small always-on-top panel. While the app itself is open on screen it shows a live
- * camera thumbnail (so you can see what the hand tracker sees) plus a detailed status
- * line. Once you leave the app, the thumbnail hides itself (nothing to gain from
- * rendering a preview no one's looking at) and the panel shrinks to a minimal one-word
- * mode indicator (Idle / Active / Menu / Brightness % / Volume % / Music / Cursor) instead.
- *
- * Also owns a second, separate overlay window: a small dot used only in Cursor mode to
- * show where your index fingertip currently maps to on screen.
+ * Manages three separate always-on-top overlay windows:
+ *  1. The status panel (top-right) - camera thumbnail + status line while the app is
+ *     foregrounded, shrinking to a minimal mode label otherwise.
+ *  2. The cursor reticle - a small hollow ring, shown only in Cursor mode, following the
+ *     index fingertip.
+ *  3. The Quick Actions HUD - a centered scrolling list, shown only in Quick Actions mode,
+ *     highlighting whichever item is currently selected.
  *
  * All updates are marshalled onto the main thread because MediaPipe's result callback
  * fires on a background thread, and Views can only be touched from the UI thread -
@@ -31,19 +31,23 @@ class OverlayManager(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    // --- status panel ---
     private var container: LinearLayout? = null
     private var statusText: TextView? = null
     private var previewView: PreviewView? = null
+    private var isAppForeground = true
+    private var lastFullText = "○ idle"
+    private var lastMinimalText = "Idle"
 
+    // --- cursor reticle ---
     private var cursorDot: View? = null
     private var cursorParams: WindowManager.LayoutParams? = null
     private var cursorDotSizePx = 0
 
-    // Assume foreground by default: the service is only ever started from an on-screen
-    // Activity, and the real state arrives moments later via setAppForeground().
-    private var isAppForeground = true
-    private var lastFullText = "○ idle"
-    private var lastMinimalText = "Idle"
+    // --- quick actions HUD ---
+    private var quickActionsPanel: LinearLayout? = null
+    private var quickActionsParams: WindowManager.LayoutParams? = null
+    private var quickActionsRows: List<TextView> = emptyList()
 
     private fun overlayType(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -52,6 +56,8 @@ class OverlayManager(private val context: Context) {
         WindowManager.LayoutParams.TYPE_PHONE
     }
 
+    private fun dp(v: Int): Int = (v * context.resources.displayMetrics.density).toInt()
+
     /** Safe to call from any thread; hops to main internally. */
     fun show() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
@@ -59,7 +65,11 @@ class OverlayManager(private val context: Context) {
             return
         }
         if (container != null) return
+        buildStatusPanel()
+        buildCursorDot()
+    }
 
+    private fun buildStatusPanel() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -73,9 +83,6 @@ class OverlayManager(private val context: Context) {
         params.x = 24
         params.y = 120
 
-        val density = context.resources.displayMetrics.density
-        fun dp(v: Int) = (v * density).toInt()
-
         val preview = PreviewView(context).apply {
             layoutParams = LinearLayout.LayoutParams(dp(140), dp(187)) // 3:4 thumbnail
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
@@ -85,8 +92,10 @@ class OverlayManager(private val context: Context) {
 
         val status = TextView(context).apply {
             text = if (isAppForeground) lastFullText else lastMinimalText
-            setTextColor(Color.WHITE)
-            textSize = if (isAppForeground) 13f else 12f
+            setTextColor(Color.parseColor("#FF29F1FF"))
+            typeface = Typeface.MONOSPACE
+            letterSpacing = 0.02f
+            textSize = if (isAppForeground) 12f else 11f
             setPadding(dp(4), if (isAppForeground) dp(6) else dp(4), dp(4), 0)
         }
 
@@ -101,12 +110,10 @@ class OverlayManager(private val context: Context) {
         statusText = status
         previewView = preview
         windowManager.addView(layout, params)
+    }
 
-        // Cursor dot: separate small overlay window, hidden until Cursor mode is active.
-        // FLAG_NOT_TOUCHABLE so it's purely visual and never intercepts real touches -
-        // the actual click is a synthesized system gesture via CursorAccessibilityService,
-        // not a touch on this view.
-        cursorDotSizePx = dp(20)
+    private fun buildCursorDot() {
+        cursorDotSizePx = dp(28)
         val dot = View(context).apply {
             setBackgroundResource(R.drawable.bg_cursor_dot)
             visibility = View.GONE
@@ -135,7 +142,7 @@ class OverlayManager(private val context: Context) {
         mainHandler.post {
             previewView?.visibility = if (foreground) View.VISIBLE else View.GONE
             statusText?.text = if (foreground) lastFullText else lastMinimalText
-            statusText?.textSize = if (foreground) 13f else 12f
+            statusText?.textSize = if (foreground) 12f else 11f
         }
     }
 
@@ -158,7 +165,7 @@ class OverlayManager(private val context: Context) {
         update(text, text)
     }
 
-    /** Moves the cursor dot to the given absolute screen coordinates. Caller is responsible for smoothing. */
+    /** Moves the cursor reticle to the given absolute screen coordinates. Caller handles smoothing. */
     fun updateCursorPosition(screenX: Float, screenY: Float) {
         mainHandler.post {
             val dot = cursorDot ?: return@post
@@ -172,10 +179,80 @@ class OverlayManager(private val context: Context) {
         }
     }
 
-    /** Shows or hides the cursor dot. Call with false when leaving Cursor mode. */
+    /** Shows or hides the cursor reticle. Call with false when leaving Cursor mode. */
     fun setCursorVisible(visible: Boolean) {
         mainHandler.post {
             cursorDot?.visibility = if (visible) View.VISIBLE else View.GONE
+        }
+    }
+
+    /**
+     * Shows or hides the centered Quick Actions HUD list, building it fresh from [items]
+     * (icon, label) each time it's shown. Only called once per mode entry/exit, so rebuilding
+     * a ~7-row list here is cheap.
+     */
+    fun showQuickActionsHud(visible: Boolean, items: List<Pair<String, String>>) {
+        mainHandler.post {
+            if (!visible) {
+                quickActionsPanel?.let {
+                    try {
+                        windowManager.removeView(it)
+                    } catch (_: Exception) {
+                    }
+                }
+                quickActionsPanel = null
+                quickActionsParams = null
+                quickActionsRows = emptyList()
+                return@post
+            }
+
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                overlayType(),
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                android.graphics.PixelFormat.TRANSLUCENT
+            )
+            params.gravity = Gravity.CENTER
+
+            val rows = items.map { (icon, label) ->
+                TextView(context).apply {
+                    text = "$icon  ${label.uppercase()}"
+                    typeface = Typeface.MONOSPACE
+                    letterSpacing = 0.05f
+                    textSize = 15f
+                    setTextColor(Color.parseColor("#9929F1FF"))
+                    setPadding(0, dp(4), 0, dp(4))
+                }
+            }
+
+            val panel = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundResource(R.drawable.bg_hud_panel)
+                rows.forEach { addView(it) }
+            }
+
+            quickActionsPanel = panel
+            quickActionsParams = params
+            quickActionsRows = rows
+            windowManager.addView(panel, params)
+        }
+    }
+
+    /** Highlights row [index] in the Quick Actions HUD (brighter text), dims the rest. */
+    fun updateQuickActionsHighlight(index: Int) {
+        mainHandler.post {
+            quickActionsRows.forEachIndexed { i, row ->
+                if (i == index) {
+                    row.setTextColor(Color.parseColor("#FF29F1FF"))
+                    row.text = "▶ ${row.text.toString().removePrefix("▶ ")}"
+                } else {
+                    row.setTextColor(Color.parseColor("#9929F1FF"))
+                    row.text = row.text.toString().removePrefix("▶ ")
+                }
+            }
         }
     }
 
@@ -184,23 +261,24 @@ class OverlayManager(private val context: Context) {
 
     fun hide() {
         mainHandler.post {
-            container?.let {
-                try {
-                    windowManager.removeView(it)
-                } catch (_: Exception) {
-                }
-            }
-            cursorDot?.let {
-                try {
-                    windowManager.removeView(it)
-                } catch (_: Exception) {
-                }
-            }
+            container?.let { safeRemove(it) }
+            cursorDot?.let { safeRemove(it) }
+            quickActionsPanel?.let { safeRemove(it) }
             container = null
             statusText = null
             previewView = null
             cursorDot = null
             cursorParams = null
+            quickActionsPanel = null
+            quickActionsParams = null
+            quickActionsRows = emptyList()
+        }
+    }
+
+    private fun safeRemove(view: View) {
+        try {
+            windowManager.removeView(view)
+        } catch (_: Exception) {
         }
     }
 }

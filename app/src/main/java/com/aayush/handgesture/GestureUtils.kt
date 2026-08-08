@@ -62,7 +62,7 @@ object GestureUtils {
         )
     }
 
-    enum class Gesture { OPEN_PALM, FIST, THUMBS_UP, ONE_FINGER, TWO_FINGER, THREE_FINGER, PINKY_ONLY, PINCH, UNKNOWN }
+    enum class Gesture { OPEN_PALM, FIST, THUMBS_UP, ONE_FINGER, TWO_FINGER, THREE_FINGER, PINKY_ONLY, ROCK, PINCH, UNKNOWN }
 
     fun classify(lm: List<NormalizedLandmark>): Gesture {
         val fs = fingerState(lm)
@@ -71,6 +71,7 @@ object GestureUtils {
             fs.extendedCount() >= 4 -> Gesture.OPEN_PALM
             fs.extendedCount() == 0 -> Gesture.FIST
             fs.thumb && !fs.index && !fs.middle && !fs.ring && !fs.pinky -> Gesture.THUMBS_UP
+            fs.index && fs.pinky && !fs.middle && !fs.ring -> Gesture.ROCK
             fs.pinky && !fs.index && !fs.middle && !fs.ring -> Gesture.PINKY_ONLY
             fs.index && fs.middle && fs.ring && !fs.pinky -> Gesture.THREE_FINGER
             fs.index && fs.middle && !fs.ring && !fs.pinky -> Gesture.TWO_FINGER

@@ -1,6 +1,10 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="accent">#FF00E5A0</color>
-    <color name="overlay_bg">#CC1A1A1A</color>
+    <!-- HUD/sci-fi palette: arc-reactor cyan on near-black navy -->
+    <color name="accent">#FF29F1FF</color>
+    <color name="accent_dim">#8029F1FF</color>
+    <color name="overlay_bg">#E6060B14</color>
+    <color name="hud_border">#FF29F1FF</color>
+    <color name="hud_text_dim">#9929F1FF</color>
 </resources>
